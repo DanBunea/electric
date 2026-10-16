@@ -37,7 +37,18 @@
     (try (#'clojure.core/serialized-require sym) ; try bc it can be cljs file
          (catch java.io.FileNotFoundException _))))
 
-(defn macroexpand-clj [o] (serialized-require (ns-name *ns*)) (macroexpand-1 o))
+(defn- desugar-static-call
+  "Clojure 1.12 (qualified methods) stopped macroexpanding `(Class/method args)`
+  to `(. Class method args)`; the analyzer relies on the old desugaring."
+  [o]
+  (let [f (when (seq? o) (first o))]
+    (if (and (qualified-symbol? f)
+             (not (resolve f))
+             (class? (resolve (symbol (namespace f)))))
+      (with-meta (list* '. (symbol (namespace f)) (symbol (name f)) (rest o)) (meta o))
+      o)))
+
+(defn macroexpand-clj [o] (serialized-require (ns-name *ns*)) (desugar-static-call (macroexpand-1 o)))
 
 (defn expand-referred-or-local-macros [o cljs-macro-env]
   ;; (:require [some.ns :refer [some-macro]])
